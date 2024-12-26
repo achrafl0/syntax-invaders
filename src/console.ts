@@ -232,4 +232,8 @@ export class ConsoleInput {
   isInputActive(): boolean {
     return this.isActive && !this.isDisabled;
   }
+
+  getCurrentInput(): string {
+    return this.currentInput;
+  }
 }

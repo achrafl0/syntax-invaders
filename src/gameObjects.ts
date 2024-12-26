@@ -1,6 +1,6 @@
 import { type Point, type Rectangle } from "./utils/geometry";
 
-export abstract class GameObject {
+export class GameObject {
   constructor(
     protected x: number,
     protected y: number,
@@ -8,11 +8,16 @@ export abstract class GameObject {
     protected height: number
   ) {}
 
-  abstract update(deltaTime: number): void;
-  abstract draw(ctx: CanvasRenderingContext2D): void;
-
   getPosition(): Point {
     return { x: this.x, y: this.y };
+  }
+
+  getWidth(): number {
+    return this.width;
+  }
+
+  getHeight(): number {
+    return this.height;
   }
 
   getBounds(): Rectangle {
@@ -22,5 +27,13 @@ export abstract class GameObject {
       width: this.width,
       height: this.height,
     };
+  }
+
+  update(deltaTime: number): void {
+    // Base update method, to be overridden by child classes
+  }
+
+  draw(ctx: CanvasRenderingContext2D): void {
+    // Base draw method, to be overridden by child classes
   }
 }

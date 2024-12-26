@@ -492,7 +492,7 @@ export const PROBLEMS: CodeProblem[] = [
     difficulty: 1,
   },
   {
-    question: "Filter positive numbers",
+    question: "Leave only positive numbers",
     availableVars: {
       numbers: "number[]",
     },
@@ -554,8 +554,12 @@ export class ProblemGenerator {
     return baseSpeed + difficulty * 2 * difficultyMultiplier;
   }
 
-  generateProblem(score: number): CodeProblem {
+  generateProblem(score: number, isTemporary: boolean = false): CodeProblem {
     const problem = this._generateProblem(score);
+
+    if (isTemporary) {
+      return problem;
+    }
 
     // Update difficulty history and average
     this.difficultyHistory.push(problem.difficulty);

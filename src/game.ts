@@ -16,6 +16,16 @@ interface GameState {
   maxDifficultyReached: number;
   gameStartTime: number;
   gameEndTime: number | null;
+  combo: number;
+  lastKillTime: number;
+}
+
+interface FloatingScore {
+  x: number;
+  y: number;
+  value: number;
+  life: number;
+  dy: number;
 }
 
 export class Game {
@@ -30,6 +40,9 @@ export class Game {
   private readonly spawnInterval: number = 5;
   private readonly maxEnemies: number = 3;
   private particles: ParticleSystem;
+  private readonly comboTimeout = 2.5; // seconds
+  private readonly maxCombo = 5;
+  private floatingScores: FloatingScore[] = [];
 
   private state: GameState = {
     score: 0,
@@ -38,6 +51,8 @@ export class Game {
     maxDifficultyReached: 1,
     gameStartTime: Date.now(),
     gameEndTime: null,
+    combo: 1,
+    lastKillTime: 0,
   };
 
   constructor(canvasId: string) {
@@ -69,9 +84,21 @@ export class Game {
       return;
     }
 
+    // Reset all targets before handling new input
+    this.enemies.forEach((enemy) => enemy.setTargeted(false));
+
     const input = this.consoleInput.handleKeyDown(event);
     if (input !== undefined) {
       this.handleCodeSubmission(input);
+    } else if (this.consoleInput.isInputActive()) {
+      // Try to find target for current input
+      const currentInput = this.consoleInput.getCurrentInput();
+      if (currentInput) {
+        const target = this.findTargetForInput(currentInput);
+        if (target) {
+          target.setTargeted(true);
+        }
+      }
     }
   }
 
@@ -87,6 +114,9 @@ export class Game {
 
   private handleCodeSubmission(code: string): void {
     this.player.handleInput(code);
+
+    // Reset all targets
+    this.enemies.forEach((enemy) => enemy.setTargeted(false));
 
     let foundValidTarget = false;
     for (const enemy of this.enemies) {
@@ -110,6 +140,19 @@ export class Game {
     }
   }
 
+  private findTargetForInput(input: string): ProblemShip | null {
+    for (const enemy of this.enemies) {
+      try {
+        if (this.player.validateSolution(input, enemy.getProblem())) {
+          return enemy;
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+    return null;
+  }
+
   private handleRestart(event: KeyboardEvent): void {
     if (event.key === "Enter") {
       this.state = {
@@ -119,6 +162,8 @@ export class Game {
         maxDifficultyReached: 1,
         gameStartTime: Date.now(),
         gameEndTime: null,
+        combo: 1,
+        lastKillTime: 0,
       };
       this.enemies = [];
       this.lasers = [];
@@ -130,7 +175,7 @@ export class Game {
   }
 
   private findGoodSpawnPosition(): Point | null {
-    const tempProblem = this.problemGenerator.generateProblem(1);
+    const tempProblem = this.problemGenerator.generateProblem(1, true);
     const baseSpeed = this.problemGenerator.getBaseSpeed(
       tempProblem.difficulty
     );
@@ -181,7 +226,27 @@ export class Game {
     }
   }
 
+  private addFloatingScore(x: number, y: number, baseValue: number): void {
+    const comboValue = baseValue * this.state.combo;
+    this.floatingScores.push({
+      x,
+      y,
+      value: comboValue,
+      life: 1,
+      dy: -50,
+    });
+  }
+
+  private updateCombo(currentTime: number): void {
+    if (currentTime - this.state.lastKillTime > this.comboTimeout) {
+      this.state.combo = 1;
+    }
+  }
+
   private checkCollisions(): void {
+    const currentTime = performance.now() / 1000;
+    this.updateCombo(currentTime);
+
     for (let i = this.lasers.length - 1; i >= 0; i--) {
       const laser = this.lasers[i];
       const laserLine = laser.getLaserLine();
@@ -191,10 +256,25 @@ export class Game {
         if (doesLineIntersectRectangle(laserLine, enemy.getBounds())) {
           enemy.showHitFlash();
           this.problemGenerator.handleProblemSolved(enemy.getProblem());
-          this.state.score += 2 * enemy.getDifficulty();
+
+          // Update combo and score
+          const baseScore = 2 * enemy.getDifficulty();
+          const comboScore = baseScore * this.state.combo;
+          this.state.score += comboScore;
+
+          // Add floating score
+          const enemyPos = enemy.getPosition();
+          this.addFloatingScore(
+            enemyPos.x + enemy.getWidth() / 2,
+            enemyPos.y,
+            baseScore
+          );
+
+          // Update combo
+          this.state.lastKillTime = currentTime;
+          this.state.combo = Math.min(this.state.combo + 1, this.maxCombo);
 
           // Create explosion at enemy position
-          const enemyPos = enemy.getPosition();
           this.particles.createExplosion(
             enemyPos.x + enemy.getWidth() / 2,
             enemyPos.y + enemy.getHeight() / 2
@@ -227,6 +307,13 @@ export class Game {
 
   private update(deltaTime: number): void {
     if (this.state.isGameOver) return;
+
+    // Update floating scores
+    this.floatingScores = this.floatingScores.filter((score) => {
+      score.y += score.dy * deltaTime;
+      score.life -= deltaTime;
+      return score.life > 0;
+    });
 
     // Update game objects
     this.consoleInput.update(deltaTime);
@@ -313,6 +400,32 @@ export class Game {
       ...this.enemies,
       ...this.lasers,
     ]);
+
+    // Draw floating scores
+    const ctx = this.renderer.getContext();
+    ctx.save();
+    for (const score of this.floatingScores) {
+      const alpha = Math.min(1, score.life * 2);
+      ctx.fillStyle = `rgba(255, 255, 0, ${alpha})`;
+      ctx.font = "bold 20px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText(`+${score.value}`, score.x, score.y);
+    }
+    ctx.restore();
+
+    // Draw combo
+    if (this.state.combo > 1) {
+      ctx.save();
+      ctx.fillStyle = "#ffff00";
+      ctx.font = "bold 24px Arial";
+      ctx.textAlign = "right";
+      ctx.fillText(
+        `Combo x${this.state.combo}`,
+        this.renderer.getCanvas().width - 10,
+        30
+      );
+      ctx.restore();
+    }
 
     // Draw UI
     this.renderer.drawScore(this.state.score);

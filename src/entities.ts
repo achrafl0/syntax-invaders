@@ -4,16 +4,47 @@ import { type CodeProblem, type TestCase } from "./types";
 
 export class PlayerShip extends GameObject {
   private input = "";
+  private glowIntensity = 0;
+  private readonly maxGlowIntensity = 0.5;
+  private readonly glowFadeSpeed = 2;
 
   constructor(x: number, y: number) {
     super(x, y, 50, 50);
   }
 
   update(deltaTime: number): void {
-    // No movement needed
+    // Update glow effect
+    this.glowIntensity = Math.max(
+      0,
+      this.glowIntensity - this.glowFadeSpeed * deltaTime
+    );
   }
 
   draw(ctx: CanvasRenderingContext2D): void {
+    // Draw glow effect
+    if (this.glowIntensity > 0) {
+      const gradient = ctx.createRadialGradient(
+        this.x + this.width / 2,
+        this.y + this.height / 2,
+        0,
+        this.x + this.width / 2,
+        this.y + this.height / 2,
+        this.width
+      );
+      gradient.addColorStop(
+        0,
+        `rgba(0, 255, 255, ${this.glowIntensity * 0.5})`
+      );
+      gradient.addColorStop(1, "rgba(0, 255, 255, 0)");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(
+        this.x - this.width / 2,
+        this.y - this.height / 2,
+        this.width * 2,
+        this.height * 2
+      );
+    }
+
     // Draw a tower with dashed neon blue style
     ctx.strokeStyle = "#00ffff";
     ctx.lineWidth = 2;
@@ -38,6 +69,7 @@ export class PlayerShip extends GameObject {
 
   handleInput(input: string): void {
     this.input = input;
+    this.glowIntensity = this.maxGlowIntensity;
   }
 
   shoot(target: ProblemShip): Laser | null {
@@ -58,16 +90,46 @@ export class PlayerShip extends GameObject {
     return null;
   }
 
-  private validateSolution(code: string, problem: CodeProblem): boolean {
+  validateSolution(code: string, problem: CodeProblem): boolean {
     return problem.testCases.every((testCase: TestCase) => {
       try {
-        // Create a new function with the test case inputs as parameters
-        const fn = new Function(
-          ...Object.keys(testCase.input),
-          `return ${code}`
-        );
-        const result = fn(...Object.values(testCase.input));
-        return result === testCase.expected;
+        // Prepare input values with proper string conversion for arrays
+        const inputValues = Object.entries(testCase.input).map(([_, value]) => {
+          if (Array.isArray(value)) {
+            return JSON.stringify(value);
+          }
+          return value;
+        });
+
+        // Create a function with proper array handling
+        const functionBody = `
+          try {
+            // Convert string arrays back to actual arrays
+            ${Object.keys(testCase.input)
+              .map((key, index) => {
+                if (Array.isArray(testCase.input[key])) {
+                  return `const ${key} = JSON.parse(arguments[${index}]);`;
+                }
+                return `const ${key} = arguments[${index}];`;
+              })
+              .join("\n")}
+
+            return ${code};
+          } catch (error) {
+            throw new Error('Runtime error: ' + error.message);
+          }
+        `;
+
+        const fn = new Function(functionBody);
+        const result = fn.apply(null, inputValues);
+
+        // Compare arrays properly
+        const isEqual =
+          Array.isArray(result) && Array.isArray(testCase.expected)
+            ? JSON.stringify(result) === JSON.stringify(testCase.expected)
+            : result === testCase.expected;
+
+        return isEqual;
       } catch (error) {
         return false;
       }
@@ -82,6 +144,9 @@ export class ProblemShip extends GameObject {
   private readonly hitboxPadding = 15;
   private hitFlashTimer = 0;
   private readonly hitFlashDuration = 0.15; // seconds
+  private pulsePhase = Math.random() * Math.PI * 2; // Random starting phase
+  private readonly pulsePeriod = 2; // seconds per cycle
+  private isTargeted = false;
 
   constructor(
     x: number,
@@ -127,10 +192,42 @@ export class ProblemShip extends GameObject {
     if (this.hitFlashTimer > 0) {
       this.hitFlashTimer -= deltaTime;
     }
+
+    // Update pulse phase
+    this.pulsePhase += (deltaTime * (Math.PI * 2)) / this.pulsePeriod;
   }
 
   draw(ctx: CanvasRenderingContext2D): void {
     const visualBounds = this.getVisualBounds();
+
+    // Draw target highlight
+    if (this.isTargeted) {
+      ctx.save();
+      ctx.strokeStyle = "#00ffff";
+      ctx.lineWidth = 3;
+      ctx.setLineDash([10, 5]);
+      const padding = 5;
+      ctx.strokeRect(
+        visualBounds.x - padding,
+        visualBounds.y - padding,
+        visualBounds.width + padding * 2,
+        visualBounds.height + padding * 2
+      );
+      ctx.restore();
+    }
+
+    // Draw pulsing glow based on difficulty
+    const pulseIntensity = (Math.sin(this.pulsePhase) + 1) * 0.5 * 0.3;
+    const glowColor = `rgba(255, 0, 0, ${
+      (pulseIntensity * this.difficulty) / 3
+    })`;
+    ctx.fillStyle = glowColor;
+    ctx.fillRect(
+      visualBounds.x - 10,
+      visualBounds.y - 10,
+      visualBounds.width + 20,
+      visualBounds.height + 20
+    );
 
     // Draw hit flash effect
     if (this.hitFlashTimer > 0) {
@@ -155,7 +252,7 @@ export class ProblemShip extends GameObject {
       visualBounds.width,
       visualBounds.height
     );
-    ctx.setLineDash([]); // Reset dash pattern
+    ctx.setLineDash([]);
 
     // Draw the problem text
     ctx.fillStyle = "#ffffff";
@@ -223,6 +320,10 @@ export class ProblemShip extends GameObject {
       width: this.width,
       height: this.height,
     };
+  }
+
+  setTargeted(targeted: boolean): void {
+    this.isTargeted = targeted;
   }
 }
 

@@ -29,11 +29,11 @@ export class GameObject {
     };
   }
 
-  update(deltaTime: number): void {
+  update(_deltaTime: number): void {
     // Base update method, to be overridden by child classes
   }
 
-  draw(ctx: CanvasRenderingContext2D): void {
+  draw(_ctx: CanvasRenderingContext2D): void {
     // Base draw method, to be overridden by child classes
   }
 }

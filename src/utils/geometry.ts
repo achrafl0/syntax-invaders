@@ -113,7 +113,7 @@ export function getDistance(point1: Point, point2: Point): number {
  */
 export function findNonOverlappingPosition(
   containerWidth: number,
-  containerHeight: number,
+  _containerHeight: number,
   rectWidth: number,
   rectHeight: number,
   existingRects: Rectangle[],

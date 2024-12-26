@@ -36,7 +36,7 @@ export class ConsoleInput {
     this.feedbackTimer = this.feedbackDuration;
   }
 
-  handleClick(x: number, y: number): void {
+  handleClick(_x: number, y: number): void {
     if (this.isDisabled) return;
 
     const consoleY = this.canvas.height - this.height;
